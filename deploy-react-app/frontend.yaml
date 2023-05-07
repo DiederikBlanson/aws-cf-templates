@@ -1,0 +1,369 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: This template is used to create a CI/CD Pipeline that deploys a React Web app to S3 for static website hosting.
+
+# Parameters to be used through out the template
+Parameters:
+  AppName: 
+    Type: String
+    Default: frontend-project
+  Url: 
+    Type: String
+    Default: YOUR_FRONTEND_URL
+  ServerUrl: 
+    Type: String
+    Default: YOUR_BACKEND_URL
+  AcmArn:
+    Type: String 
+    Default: YOUR_ACM_ARN
+  HostZoneId:
+    Type: String 
+    Default: YOUR_ROUTE53_HOSTZONE
+  Stage:
+    Type: String
+    Default: production
+  SourceCodeArn:
+    Type: String
+    Default: YOUR_SOURCECODE_ARN
+  SourceCodeRepo:
+    Type: String 
+    Default: USERNAME/REPOSITORY
+  SourceCodeBranch:
+    Type: String 
+    Default: YOUR_BRANCH
+  
+# Resources that will be provisioned by this template.
+Resources:
+
+  # Create CodePipeline with 3 stages (Source, Build and Deploy)
+  CodePipeline:
+    Type: 'AWS::CodePipeline::Pipeline'
+    Properties:
+      RoleArn: !GetAtt CodePipeLineRole.Arn
+      Name: !Join ['-', [!Ref AppName, !Ref 'AWS::AccountId', 'CodePipeLine',!Ref Stage]]
+      ArtifactStore:
+        Location: !Ref PipelineBucket
+        Type: S3
+      
+      Stages:
+        - # Download Source code 
+          Name: Source
+          Actions: 
+            - 
+              Name: SourceAction
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeStarSourceConnection
+                Version: 1
+              Configuration:
+                ConnectionArn: !Ref SourceCodeArn
+                FullRepositoryId: !Ref SourceCodeRepo
+                BranchName: !Ref SourceCodeBranch
+              OutputArtifacts: 
+                - 
+                  Name: MyApp
+        - # Build the project using the BuildProject and Output build artifacts to build-output-artifacts path in S3 Bucket 
+          Name: TestBuild
+          Actions: 
+            - 
+              Name: BuildAction
+              ActionTypeId: 
+                Category: Build
+                Owner: AWS
+                Version: 1
+                Provider: CodeBuild
+              InputArtifacts: 
+                - 
+                  Name: MyApp
+              OutputArtifacts: 
+                - 
+                  Name: MyAppBuild
+              Configuration:
+                ProjectName: !Ref CodeBuild
+                EnvironmentVariables: !Sub '
+                  [{"name":"SERVER_URL","value":"${ServerUrl}","type":"PLAINTEXT"}]
+                '
+        - # Deploy the project to S3 Bucket for website hosting.
+          Name: Deploy
+          Actions: 
+            - 
+              Name: DeployAction
+              ActionTypeId: 
+                Category: Deploy
+                Owner: AWS
+                Version: 1
+                Provider: S3
+              InputArtifacts: 
+                - 
+                  Name: MyAppBuild  
+              Configuration:                
+                BucketName: !Ref DeployBucket
+                Extract: 'true'                
+      # Create a name tag for the pipeline
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref AppName, !Ref 'AWS::AccountId', 'CodePipeLine',!Ref Stage]]
+
+  # Create role for CodeBuild
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - 
+            Effect: Allow
+            Principal:
+              Service:
+                - "codebuild.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: /service-role/
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement: 
+              - 
+                Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                  - "s3:GetObjectVersion"
+                  - "s3:GetBucketVersioning"
+                  - "s3:PutObject"
+                  - "s3:PutObjectAcl"
+                  - "s3:PutObjectVersionAcl"
+                Resource: 
+                  - !GetAtt PipelineBucket.Arn
+                  - !Join ['', [!GetAtt PipelineBucket.Arn, "/*"]]
+              - 
+                Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                  - "s3:GetObjectVersion"
+                  - "s3:GetBucketVersioning"
+                  - "s3:PutObject"
+                  - "s3:PutObjectAcl"
+                  - "s3:PutObjectVersionAcl"
+                Resource: 
+                  - !GetAtt DeployBucket.Arn
+                  - !Join ['', [!GetAtt DeployBucket.Arn, "/*"]]
+              -
+                Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                  - "cloudfront:CreateInvalidation"
+                Resource:
+                  - "*"
+              -
+                Effect: Allow
+                Action:
+                  - "codestar-connections:UseConnection"
+                Resource: !Ref SourceCodeArn
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref AppName, !Ref 'AWS::AccountId', 'BuildRole', !Ref Stage]]
+
+
+  # Create role for CodePipeline
+  CodePipeLineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - 
+            Effect: Allow
+            Principal:
+              Service:
+                - "codepipeline.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement: 
+              - 
+                Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                  - "s3:GetObjectVersion"
+                  - "s3:GetBucketVersioning"
+                  - "s3:GetObjectAcl"
+                  - "s3:PutObject"
+                  - "s3:PutObjectAcl"
+                  - "s3:PutObjectVersionAcl"                  
+                Resource: 
+                  - !GetAtt PipelineBucket.Arn
+                  - !Join ['', [!GetAtt PipelineBucket.Arn, "/*"]]
+              - 
+                Effect: Allow  
+                Action:
+                  - "codebuild:BatchGetBuilds"
+                  - "codebuild:StartBuild"
+                Resource: "*"
+              - 
+                Effect: Allow  
+                Action:
+                  - "codecommit:GetRepository"
+                  - "codecommit:GetBranch"
+                  - "codecommit:GetCommit"
+                  - "codecommit:UploadArchive"
+                  - "codecommit:GetUploadArchiveStatus"
+                  - "codecommit:CancelUploadArchive"
+                Resource: "*" 
+              -
+                Effect: Allow
+                Action:
+                  - "codestar-connections:UseConnection"
+                Resource: !Ref SourceCodeArn               
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref AppName, !Ref 'AWS::AccountId', 'PipelineRole', !Ref Stage]]
+
+  
+  # Create Code Build Project
+  # https://docs.aws.amazon.com/codebuild/latest/userguide/available-runtimes.html
+  CodeBuild:
+    Type: 'AWS::CodeBuild::Project'
+    Properties:
+      Name: !Sub ${AWS::StackName}-CodeBuild
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts:
+        Type: CODEPIPELINE
+        Name: MyProject
+      Source: 
+        Type: CODEPIPELINE
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Type: LINUX_CONTAINER
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:4.0
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: client/buildspec.yaml
+
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref AppName, !Ref 'AWS::AccountId', 'BuildProj', !Ref Stage]]
+
+  # S3 bucket for Storing Pipeline Artifacts
+  PipelineBucket: 
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Join ['-', [!Ref AppName, !Ref 'AWS::AccountId', 'pipelineartifacts', !Ref Stage]]
+
+  # S3 bucket for Website Hosting
+  DeployBucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Join ['-', [!Ref AppName, !Ref 'AWS::AccountId', 'website', !Ref Stage]]
+      WebsiteConfiguration:
+        IndexDocument: index.html
+      AccessControl: PublicReadWrite
+      CorsConfiguration:
+        CorsRules:
+        - AllowedOrigins: ['*']
+          AllowedMethods: [GET]
+  
+  # Bucket policy for Website Hosting
+  DeploymentBucketPolicy: 
+    Type: AWS::S3::BucketPolicy
+    Properties: 
+      Bucket: !Ref DeployBucket
+      PolicyDocument: 
+        Statement: 
+          - 
+            Action: 
+              - "s3:GetObject"
+            Effect: "Allow"
+            Resource: 
+              Fn::Join: 
+                - ""
+                - 
+                  - "arn:aws:s3:::"
+                  - 
+                    Ref: DeployBucket
+                  - "/*"
+            Principal: "*"
+  
+  # Create a CloudFront Access Identity to broker access to the bucket
+  # https://gist.github.com/ism0080/36b65514d6a13680e31f9170f1065849
+  # https://github.com/forestryio/cloudformation-templates/blob/master/static-site-hosting/advanced-route53-acm.yml
+  CloudFrontOriginAccessIdentity:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: !Ref DeployBucket
+
+  CloudFrontReadPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DeployBucket
+      PolicyDocument:
+        Statement:
+        - Action: s3:GetObject
+          Effect: Allow
+          Resource: !Sub 'arn:aws:s3:::${DeployBucket}/*'
+          Principal:
+            CanonicalUser: !GetAtt CloudFrontOriginAccessIdentity.S3CanonicalUserId
+
+  MyDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Aliases:
+          - !Ref Url
+        ViewerCertificate:
+          AcmCertificateArn: !Ref AcmCert #!Ref AcmArn
+          SslSupportMethod: 'sni-only'
+        Enabled: true
+        DefaultRootObject: index.html
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+        Origins:
+          - DomainName: !GetAtt DeployBucket.DomainName
+            Id: S3Origin
+            S3OriginConfig:
+              OriginAccessIdentity: !Sub 'origin-access-identity/cloudfront/${CloudFrontOriginAccessIdentity}'
+        CacheBehaviors:
+          - PathPattern: /*
+            TargetOriginId: S3Origin
+            ViewerProtocolPolicy: redirect-to-https
+            ForwardedValues:
+              QueryString: false
+              Cookies:
+                Forward: none
+    
+  # Set up A Record via Route 53
+  Route53Record:
+    Type: AWS::Route53::RecordSet
+    DependsOn: MyDistribution
+    Properties:
+      HostedZoneId: !Ref HostZoneId 
+      Name: !Ref Url
+      Type: A
+      AliasTarget:
+        HostedZoneId: Z2FDTNDATAQYW2 # This Zone ID is used for any CloudFront Distribution
+        DNSName: !GetAtt 'MyDistribution.DomainName'
+  
+  # Set up TLS Cert
+  AcmCert:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Ref Url
+      ValidationMethod: DNS
+
+Outputs: 
+  WebsiteUrl:
+    Value:
+      Fn::GetAtt:
+        - DeployBucket
+        - WebsiteURL
