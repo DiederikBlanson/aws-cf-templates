@@ -11,7 +11,7 @@ The following parameters are used throughout the template:
 - `ServerUrl`: A string representing the URL of the server hosting the app's APIs. 
 - `AcmArn`: A string representing the Amazon Resource Name (ARN) of the AWS Certificate Manager (ACM) certificate used for HTTPS/TLS.
 - `HostZoneId`: A string representing the hosted zone ID of the Amazon Route 53 DNS record for the deployed web app. 
-Stage: A string representing the deployment stage (e.g., "production" or "staging"). The default value is production.
+- `Stage`: A string representing the deployment stage (e.g., "production" or "staging"). The default value is production.
 - `SourceCodeArn`: A string representing the ARN of the AWS CodeStar connection used to connect to the source code repository. 
 - `SourceCodeRepo`: A string representing the name of the source code repository for the app.
 - `SourceCodeBranch`: A string representing the name of the branch in the source code repository to deploy.
