@@ -4,7 +4,7 @@ This script is a CloudFormation template that provisions a CodePipeline that bui
 
 The resources created by the template include the CodePipeline, CodeBuild project, two S3 buckets (one for storing pipeline artifacts and another for website hosting), two IAM roles (one for CodePipeline and one for CodeBuild), a CloudFront origin access identity, a CloudFront distribution, an ACM certificate, and a Route53 record set. The website URL is exposed as an output parameter of the CloudFormation stack.
 
-Parameters
+### Parameters
 The following parameters are used throughout the template:
 - `AppName`: A string representing the name of the application.
 - `Url`: A string representing the URL for the deployed web app. 
@@ -15,3 +15,9 @@ The following parameters are used throughout the template:
 - `SourceCodeArn`: A string representing the ARN of the AWS CodeStar connection used to connect to the source code repository. 
 - `SourceCodeRepo`: A string representing the name of the source code repository for the app.
 - `SourceCodeBranch`: A string representing the name of the branch in the source code repository to deploy.
+
+### TODO
+There are still some improvements to be made.
+- Invalidate CloudFront-cache upon every new deployment such that the users always sees the latest version.
+- At the moment, the user has to manually create a SSL-certificate for the frontend (value `AcmArn`) which is not ideal.
+- In case the user wants to delete the CloudFormation deployment, the S3 buckets should be manually deleted as this is not possible to do via CloudFormation. A potential solution includes triggering a Lambda-function that calls the AWS S3 api that is able to delete buckets programmatically.
